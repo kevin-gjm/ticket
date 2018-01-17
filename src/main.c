@@ -1140,6 +1140,7 @@ static int __raft_logentry_offer(
 
     /* So that our entry points to a valid buffer, get the mmap'd buffer.
      * This is because the currently pointed to buffer is temporary. */
+/*
     e = mdb_txn_begin(sv->db_env, NULL, 0, &txn);
     if (0 != e)
         mdb_fatal(e);
@@ -1158,7 +1159,7 @@ static int __raft_logentry_offer(
     e = mdb_txn_commit(txn);
     if (0 != e)
         mdb_fatal(e);
-
+*/
     return 0;
 }
 
