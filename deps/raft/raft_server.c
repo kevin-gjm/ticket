@@ -156,10 +156,10 @@ int raft_periodic(raft_server_t* me_, int msec_since_last_period)
     return 0;
 }
 
-raft_entry_t* raft_get_entry_from_idx(raft_server_t* me_, int etyidx)
+int raft_get_entry_from_idx(raft_server_t* me_, unsigned long etyidx,raft_entry_t* ety)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
-    return log_get_from_idx(me->log, etyidx);
+    return log_get_from_idx(me->log, etyidx, ety);
 }
 
 int raft_recv_appendentries_response(raft_server_t* me_,
@@ -244,8 +244,9 @@ int raft_recv_appendentries_response(raft_server_t* me_,
 
         if (0 < match_idx)
         {
-            raft_entry_t* ety = raft_get_entry_from_idx(me_, match_idx);
-            if (ety->term == me->current_term && point <= match_idx)
+        	raft_entry_t ety;
+            raft_get_entry_from_idx(me_, match_idx, &ety);
+            if (ety.term == me->current_term && point <= match_idx)
                 votes++;
         }
     }
@@ -254,7 +255,8 @@ int raft_recv_appendentries_response(raft_server_t* me_,
         raft_set_commit_idx(me_, point);
 
     /* Aggressively send remaining entries */
-    if (raft_get_entry_from_idx(me_, raft_node_get_next_idx(node)))
+	raft_entry_t tmp;
+    if (0 == raft_get_entry_from_idx(me_, raft_node_get_next_idx(node),&tmp))
         raft_send_appendentries(me_, node);
 
     /* periodic applies committed entries lazily */
@@ -308,9 +310,11 @@ int raft_recv_appendentries(
     /* NOTE: the log starts at 1 */
     if (0 < ae->prev_log_idx)
     {
-        raft_entry_t* e = raft_get_entry_from_idx(me_, ae->prev_log_idx);
+        raft_entry_t e ={0};
+			
+		
 
-        if (!e)
+        if (0 != raft_get_entry_from_idx(me_, ae->prev_log_idx,&e))
         {
             __log(me_, node, "AE no log at prev_idx %d", ae->prev_log_idx);
             goto fail_with_current_idx;
@@ -321,10 +325,10 @@ int raft_recv_appendentries(
         if (raft_get_current_idx(me_) < ae->prev_log_idx)
             goto fail_with_current_idx;
 
-        if (e->term != ae->prev_log_term)
+        if (e.term != ae->prev_log_term)
         {
             __log(me_, node, "AE term doesn't match prev_term (ie. %d vs %d) ci:%d pli:%d",
-                  e->term, ae->prev_log_term, raft_get_current_idx(me_), ae->prev_log_idx);
+                  e.term, ae->prev_log_term, raft_get_current_idx(me_), ae->prev_log_idx);
             assert(me->commit_idx < ae->prev_log_idx);
             /* Delete all the following log entries because they don't match */
             log_delete(me->log, ae->prev_log_idx);
@@ -349,15 +353,17 @@ int raft_recv_appendentries(
     {
         msg_entry_t* ety = &ae->entries[i];
         int ety_index = ae->prev_log_idx + 1 + i;
-        raft_entry_t* existing_ety = raft_get_entry_from_idx(me_, ety_index);
+        raft_entry_t existing_ety = {0};
+		
+		int ret = raft_get_entry_from_idx(me_, ety_index,&existing_ety);
         r->current_idx = ety_index;
-        if (existing_ety && existing_ety->term != ety->term)
+        if (ret == 0  && existing_ety.term != ety->term)
         {
             assert(me->commit_idx < ety_index);
             log_delete(me->log, ety_index);
             break;
         }
-        else if (!existing_ety)
+        else if (ret != 0)
             break;
     }
 
@@ -417,11 +423,12 @@ static int __should_grant_vote(raft_server_private_t* me, msg_requestvote_t* vr)
     if (0 == current_idx)
         return 1;
 
-    raft_entry_t* e = raft_get_entry_from_idx((void*)me, current_idx);
-    if (e->term < vr->last_log_term)
+    raft_entry_t e ={0};
+    raft_get_entry_from_idx((void*)me, current_idx,&e);
+    if (e.term < vr->last_log_term)
         return 1;
 
-    if (vr->last_log_term == e->term && current_idx <= vr->last_log_idx)
+    if (vr->last_log_term == e.term && current_idx <= vr->last_log_idx)
         return 1;
 
     return 0;
@@ -607,16 +614,17 @@ int raft_apply_entry(raft_server_t* me_)
 
     int log_idx = me->last_applied_idx + 1;
 
-    raft_entry_t* e = raft_get_entry_from_idx(me_, log_idx);
-    if (!e)
+    raft_entry_t e ;
+	int ret = raft_get_entry_from_idx(me_, log_idx,&e);
+    if (ret != 0)
         return -1;
 
     __log(me_, NULL, "applying log: %d, id: %d size: %d",
-          me->last_applied_idx, e->id, e->data.len);
+          me->last_applied_idx, e.id, e.data.len);
 
     me->last_applied_idx++;
     if (me->cb.applylog)
-        me->cb.applylog(me_, me->udata, e);
+        me->cb.applylog(me_, me->udata, &e);
 
     /* voting cfg change is now complete */
     if (log_idx == me->voting_cfg_change_log_idx)
@@ -647,9 +655,13 @@ int raft_send_appendentries(raft_server_t* me_, raft_node_t* node)
 
     msg_entry_t mety;
 
-    raft_entry_t* ety = raft_get_entry_from_idx(me_, next_idx);
-    if (ety)
+
+	raft_entry_t* ety ;
+	raft_entry_t ety_tmp = {0};
+    
+    if (0 == raft_get_entry_from_idx(me_, next_idx, &ety_tmp))
     {
+    	ety = &ety_tmp; 
         mety.term = ety->term;
         mety.id = ety->id;
         mety.type = ety->type;
@@ -663,10 +675,10 @@ int raft_send_appendentries(raft_server_t* me_, raft_node_t* node)
     /* previous log is the log just before the new logs */
     if (1 < next_idx)
     {
-        raft_entry_t* prev_ety = raft_get_entry_from_idx(me_, next_idx - 1);
+        raft_entry_t prev_ety;
         ae.prev_log_idx = next_idx - 1;
-        if (prev_ety)
-            ae.prev_log_term = prev_ety->term;
+        if (0 == raft_get_entry_from_idx(me_, next_idx - 1,&prev_ety))
+            ae.prev_log_term = prev_ety.term;
     }
 
     __log(me_, node, "sending appendentries node: ci:%d t:%d lc:%d pli:%d plt:%d",
@@ -777,12 +789,12 @@ void raft_vote_for_nodeid(raft_server_t* me_, const int nodeid)
 int raft_msg_entry_response_committed(raft_server_t* me_,
                                       const msg_entry_response_t* r)
 {
-    raft_entry_t* ety = raft_get_entry_from_idx(me_, r->idx);
-    if (!ety)
+    raft_entry_t ety ={0};
+    if (0 != raft_get_entry_from_idx(me_, r->idx, &ety))
         return 0;
 
     /* entry from another leader has invalidated this entry message */
-    if (r->term != ety->term)
+    if (r->term != ety.term)
         return -1;
     return r->idx <= raft_get_commit_idx(me_);
 }

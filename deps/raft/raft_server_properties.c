@@ -57,7 +57,7 @@ int raft_get_timeout_elapsed(raft_server_t* me_)
     return ((raft_server_private_t*)me_)->timeout_elapsed;
 }
 
-int raft_get_log_count(raft_server_t* me_)
+unsigned long raft_get_log_count(raft_server_t* me_)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     return log_count(me->log);
@@ -69,7 +69,7 @@ int raft_get_voted_for(raft_server_t* me_)
     return me->voted_for;
 }
 
-void raft_set_current_term(raft_server_t* me_, const int term)
+void raft_set_current_term(raft_server_t* me_, const unsigned long term)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     if (me->current_term < term)
@@ -81,18 +81,18 @@ void raft_set_current_term(raft_server_t* me_, const int term)
     }
 }
 
-int raft_get_current_term(raft_server_t* me_)
+unsigned long raft_get_current_term(raft_server_t* me_)
 {
     return ((raft_server_private_t*)me_)->current_term;
 }
 
-int raft_get_current_idx(raft_server_t* me_)
+unsigned long raft_get_current_idx(raft_server_t* me_)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     return log_get_current_idx(me->log);
 }
 
-void raft_set_commit_idx(raft_server_t* me_, int idx)
+void raft_set_commit_idx(raft_server_t* me_, unsigned long idx)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     assert(me->commit_idx <= idx);
@@ -100,18 +100,18 @@ void raft_set_commit_idx(raft_server_t* me_, int idx)
     me->commit_idx = idx;
 }
 
-void raft_set_last_applied_idx(raft_server_t* me_, int idx)
+void raft_set_last_applied_idx(raft_server_t* me_, unsigned long idx)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     me->last_applied_idx = idx;
 }
 
-int raft_get_last_applied_idx(raft_server_t* me_)
+unsigned long raft_get_last_applied_idx(raft_server_t* me_)
 {
     return ((raft_server_private_t*)me_)->last_applied_idx;
 }
 
-int raft_get_commit_idx(raft_server_t* me_)
+unsigned long raft_get_commit_idx(raft_server_t* me_)
 {
     return ((raft_server_private_t*)me_)->commit_idx;
 }
@@ -182,14 +182,15 @@ int raft_is_candidate(raft_server_t* me_)
     return raft_get_state(me_) == RAFT_STATE_CANDIDATE;
 }
 
-int raft_get_last_log_term(raft_server_t* me_)
+unsigned long raft_get_last_log_term(raft_server_t* me_)
 {
     int current_idx = raft_get_current_idx(me_);
     if (0 < current_idx)
     {
-        raft_entry_t* ety = raft_get_entry_from_idx(me_, current_idx);
-        if (ety)
-            return ety->term;
+        raft_entry_t ety;
+		int ret = raft_get_entry_from_idx(me_, current_idx, &ety);
+        if (0 == ret)
+            return ety.term;
     }
     return 0;
 }

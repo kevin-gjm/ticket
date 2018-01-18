@@ -27,6 +27,15 @@ int mdb_puts_int(MDB_txn *txn, MDB_dbi dbi, char* keystr, int in);
 
 int mdb_puts_int_commit(MDB_env *env, MDB_dbi dbi, char* keystr, int in);
 
+int mdb_gets_ulong(MDB_env *env, MDB_dbi dbi, char* keystr, unsigned long *out);
+
+int mdb_puts_ulong(MDB_txn* txn, MDB_dbi dbi, char* keystr, unsigned long in);
+
+int mdb_puts_ulong_commit(MDB_env *env, MDB_dbi dbi, char* keystr, unsigned long in);
+
+
+
+
 /**
  * Delete the first item */
 int mdb_poll(MDB_env *env, MDB_dbi dbi, MDB_val *k, MDB_val *v);

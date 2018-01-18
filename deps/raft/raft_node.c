@@ -24,8 +24,8 @@ typedef struct
 {
     void* udata;
 
-    int next_idx;
-    int match_idx;
+    unsigned long next_idx;
+    unsigned long match_idx;
 
     int flags;
 
@@ -44,26 +44,26 @@ raft_node_t* raft_node_new(void* udata, int id)
     return (raft_node_t*)me;
 }
 
-int raft_node_get_next_idx(raft_node_t* me_)
+unsigned long raft_node_get_next_idx(raft_node_t* me_)
 {
     raft_node_private_t* me = (raft_node_private_t*)me_;
     return me->next_idx;
 }
 
-void raft_node_set_next_idx(raft_node_t* me_, int nextIdx)
+void raft_node_set_next_idx(raft_node_t* me_, unsigned long nextIdx)
 {
     raft_node_private_t* me = (raft_node_private_t*)me_;
     /* log index begins at 1 */
     me->next_idx = nextIdx < 1 ? 1 : nextIdx;
 }
 
-int raft_node_get_match_idx(raft_node_t* me_)
+unsigned long raft_node_get_match_idx(raft_node_t* me_)
 {
     raft_node_private_t* me = (raft_node_private_t*)me_;
     return me->match_idx;
 }
 
-void raft_node_set_match_idx(raft_node_t* me_, int matchIdx)
+void raft_node_set_match_idx(raft_node_t* me_, unsigned long matchIdx)
 {
     raft_node_private_t* me = (raft_node_private_t*)me_;
     me->match_idx = matchIdx;

@@ -17,7 +17,7 @@ typedef struct {
 
     /* the server's best guess of what the current term is
      * starts at zero */
-    int current_term;
+    unsigned long current_term;
 
     /* The candidate the server voted for in its current term,
      * or Nil if it hasn't voted for any.  */
@@ -29,10 +29,10 @@ typedef struct {
     /* Volatile state: */
 
     /* idx of highest log entry known to be committed */
-    int commit_idx;
+    unsigned long commit_idx;
 
     /* idx of highest log entry applied to state machine */
-    int last_applied_idx;
+    unsigned long last_applied_idx;
 
     /* follower/leader/candidate indicator */
     int state;
@@ -69,7 +69,7 @@ void raft_become_follower(raft_server_t* me);
 
 void raft_vote(raft_server_t* me, raft_node_t* node);
 
-void raft_set_current_term(raft_server_t* me,int term);
+void raft_set_current_term(raft_server_t* me,unsigned long term);
 
 /**
  * @return 0 on error */
@@ -90,7 +90,7 @@ int raft_apply_entry(raft_server_t* me_);
  * @return 0 if unsuccessful */
 int raft_append_entry(raft_server_t* me_, raft_entry_t* c);
 
-void raft_set_last_applied_idx(raft_server_t* me, int idx);
+void raft_set_last_applied_idx(raft_server_t* me, unsigned long idx);
 
 void raft_set_state(raft_server_t* me_, int state);
 
@@ -98,11 +98,11 @@ int raft_get_state(raft_server_t* me_);
 
 raft_node_t* raft_node_new(void* udata, int id);
 
-void raft_node_set_next_idx(raft_node_t* node, int nextIdx);
+void raft_node_set_next_idx(raft_node_t* node, unsigned long nextIdx);
 
-void raft_node_set_match_idx(raft_node_t* node, int matchIdx);
+void raft_node_set_match_idx(raft_node_t* node, unsigned long matchIdx);
 
-int raft_node_get_match_idx(raft_node_t* me_);
+unsigned long raft_node_get_match_idx(raft_node_t* me_);
 
 void raft_node_vote_for_me(raft_node_t* me_, const int vote);
 

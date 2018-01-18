@@ -141,6 +141,19 @@ int mdb_gets_int(MDB_env *env, MDB_dbi dbi, char* keystr, int *out)
     return -1;
 }
 
+int mdb_gets_ulong(MDB_env *env, MDB_dbi dbi, char* keystr, unsigned long *out)
+{
+    MDB_val val;
+    mdb_gets(env, dbi, keystr, &val);
+    if (val.mv_data)
+    {
+        *out = *(unsigned long*)val.mv_data;
+        return 0;
+    }
+    return -1;
+}
+
+
 int mdb_puts_int(MDB_txn* txn, MDB_dbi dbi, char* keystr, int in)
 {
     MDB_val key = { .mv_size = strlen(keystr), .mv_data = keystr };
@@ -158,6 +171,24 @@ int mdb_puts_int(MDB_txn* txn, MDB_dbi dbi, char* keystr, int in)
     return 0;
 }
 
+int mdb_puts_ulong(MDB_txn* txn, MDB_dbi dbi, char* keystr, unsigned long in)
+{
+    MDB_val key = { .mv_size = strlen(keystr), .mv_data = keystr };
+    MDB_val val = { .mv_size = sizeof(unsigned long), .mv_data = &in };
+
+    int e = mdb_put(txn, dbi, &key, &val, 0);
+    switch (e)
+    {
+    case 0:
+        break;
+    default:
+        mdb_fatal(e);
+    }
+
+    return 0;
+}
+
+
 int mdb_puts_int_commit(MDB_env *env, MDB_dbi dbi, char* keystr, int in)
 {
     MDB_txn *txn;
@@ -174,6 +205,24 @@ int mdb_puts_int_commit(MDB_env *env, MDB_dbi dbi, char* keystr, int in)
 
     return 0;
 }
+
+int mdb_puts_ulong_commit(MDB_env *env, MDB_dbi dbi, char* keystr, unsigned long in)
+{
+    MDB_txn *txn;
+
+    int e = mdb_txn_begin(env, NULL, 0, &txn);
+    if (0 != e)
+        mdb_fatal(e);
+
+    mdb_puts_ulong(txn, dbi, keystr, in);
+
+    e = mdb_txn_commit(txn);
+    if (0 != e)
+        mdb_fatal(e);
+
+    return 0;
+}
+
 
 int mdb_poll(MDB_env *env, MDB_dbi dbi, MDB_val *k, MDB_val *v)
 {

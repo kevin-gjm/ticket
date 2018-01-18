@@ -32,7 +32,7 @@
 #define LEADER_URL_LEN 512
 #define IPC_PIPE_NAME "ticketd_ipc"
 #define HTTP_WORKERS 4
-#define IP_STR_LEN strlen("111.111.111.111")
+#define IP_STR_LEN 16//strlen("111.111.111.111")
 
 typedef enum {
     HANDSHAKE_FAILURE,
@@ -420,7 +420,7 @@ static int __raft_send_requestvote(
     msg_t msg = {};
     msg.type = MSG_REQUESTVOTE,
     msg.rv = *m;
-    __peer_msg_send(conn->stream, tpl_map("S(I$(IIII))", &msg), bufs, buf);
+    __peer_msg_send(conn->stream, tpl_map("S(I$(UIUU))", &msg), bufs, buf);
     return 0;
 }
 
@@ -447,7 +447,7 @@ static int __raft_send_appendentries(
     msg.ae.prev_log_term = m->prev_log_term;
     msg.ae.leader_commit = m->leader_commit;
     msg.ae.n_entries = m->n_entries;
-    ptr += __peer_msg_serialize(tpl_map("S(I$(IIIII))", &msg), bufs, ptr);
+    ptr += __peer_msg_serialize(tpl_map("S(I$(UUUUU))", &msg), bufs, ptr);
 
     /* appendentries with payload */
     if (0 < m->n_entries)
@@ -458,7 +458,7 @@ static int __raft_send_appendentries(
         };
 
         /* list of entries */
-        tpl_node *tn = tpl_map("IIIB",
+        tpl_node *tn = tpl_map("UUIB",
                 &m->entries[0].id,
                 &m->entries[0].term,
                 &m->entries[0].type,
@@ -623,10 +623,10 @@ commit:
 static int __raft_persist_term(
     raft_server_t* raft,
     void *udata,
-    const int current_term
+    const unsigned long current_term
     )
 {
-    return mdb_puts_int_commit(sv->db_env, sv->state, "term", current_term);
+    return mdb_puts_ulong_commit(sv->db_env, sv->state, "term", current_term);
 }
 
 /** Raft callback for saving voted_for field to disk.
@@ -634,10 +634,10 @@ static int __raft_persist_term(
 static int __raft_persist_vote(
     raft_server_t* raft,
     void *udata,
-    const int voted_for
+    const unsigned long voted_for
     )
 {
-    return mdb_puts_int_commit(sv->db_env, sv->state, "voted_for", voted_for);
+    return mdb_puts_ulong_commit(sv->db_env, sv->state, "voted_for", voted_for);
 }
 
 static void __peer_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf)
@@ -713,7 +713,7 @@ static int __deserialize_and_handle_msg(void *img, size_t sz, void *data)
         /* send response */
         uv_buf_t bufs[1];
         char buf[RAFT_BUFLEN];
-        __peer_msg_send(conn->stream, tpl_map("S(I$(IIII))", &msg), bufs, buf);
+        __peer_msg_send(conn->stream, tpl_map("S(I$(UIUU))", &msg), bufs, buf);
 
         conn->n_expected_entries = 0;
         return 0;
@@ -824,7 +824,7 @@ static int __deserialize_and_handle_msg(void *img, size_t sz, void *data)
     {
         msg_t msg = { .type = MSG_REQUESTVOTE_RESPONSE };
         e = raft_recv_requestvote(sv->raft, conn->node, &m.rv, &msg.rvr);
-        __peer_msg_send(conn->stream, tpl_map("S(I$(II))", &msg), bufs, buf);
+        __peer_msg_send(conn->stream, tpl_map("S(I$(UI))", &msg), bufs, buf);
     }
     break;
     case MSG_REQUESTVOTE_RESPONSE:
@@ -842,7 +842,7 @@ static int __deserialize_and_handle_msg(void *img, size_t sz, void *data)
         /* this is a keep alive message */
         msg_t msg = { .type = MSG_APPENDENTRIES_RESPONSE };
         e = raft_recv_appendentries(sv->raft, conn->node, &m.ae, &msg.aer);
-        __peer_msg_send(conn->stream, tpl_map("S(I$(IIII))", &msg), bufs, buf);
+        __peer_msg_send(conn->stream, tpl_map("S(I$(UIUU))", &msg), bufs, buf);
         break;
     case MSG_APPENDENTRIES_RESPONSE:
         e = raft_recv_appendentries_response(sv->raft, conn->node, &m.aer);
@@ -1078,7 +1078,7 @@ static int __raft_logentry_offer(
     raft_server_t* raft,
     void *udata,
     raft_entry_t *ety,
-    int ety_idx
+    unsigned long ety_idx
     )
 {
     MDB_txn *txn;
@@ -1092,7 +1092,8 @@ static int __raft_logentry_offer(
 
     uv_buf_t bufs[1];
     char buf[RAFT_BUFLEN];
-    __peer_msg_serialize(tpl_map("S(III)", ety), bufs, buf);
+	//	存储term id type
+    __peer_msg_serialize(tpl_map("S(UUI)", ety), bufs, buf);
 
     /* 1. put metadata */
     ety_idx <<= 1;
@@ -1169,7 +1170,7 @@ static int __raft_logentry_poll(
     raft_server_t* raft,
     void *udata,
     raft_entry_t *entry,
-    int ety_idx
+    unsigned long ety_idx
     )
 {
     MDB_val k, v;
@@ -1185,8 +1186,8 @@ static int __raft_logentry_poll(
 static int __raft_logentry_pop(
     raft_server_t* raft,
     void *udata,
-    raft_entry_t *entry,
-    int ety_idx
+    raft_entry_t *ety,
+    unsigned long ety_idx
     )
 {
     MDB_val k, v;
@@ -1194,6 +1195,76 @@ static int __raft_logentry_pop(
     mdb_pop(sv->db_env, sv->entries, &k, &v);
 
     return 0;
+}
+int	__raft_logentry_get
+(
+   raft_server_t* raft,
+   void *user_data,
+   raft_entry_t *entry,
+   unsigned long ety_idx
+   )
+{
+	MDB_txn *txn;
+
+	int e = mdb_txn_begin(sv->db_env, NULL, 0, &txn);
+	   if (0 != e)
+		   mdb_fatal(e);
+
+	ety_idx <<= 1;
+    MDB_val key = { .mv_size = sizeof(ety_idx), .mv_data = (void*)&ety_idx };
+    MDB_val val ;
+
+    e = mdb_get(txn, sv->entries, &key, &val);
+    switch (e)
+    {
+    case 0:
+        break;
+    case MDB_MAP_FULL:
+    {
+        mdb_txn_abort(txn);
+        return -1;
+    }
+    default:
+        mdb_fatal(e);
+    }
+
+	tpl_node *tn = tpl_map(tpl_peek(TPL_MEM, val.mv_data, val.mv_size),
+							   &(entry->term),
+							   &(entry->id),
+							   &(entry->type));
+	tpl_free(tn);
+
+		
+
+    /* 2. put entry */
+    ety_idx |= 1;
+    key.mv_size = sizeof(ety_idx);
+    key.mv_data = (void*)&ety_idx;
+   
+
+  e = mdb_get(txn, sv->entries, &key, &val);
+    switch (e)
+    {
+    case 0:
+        break;
+    case MDB_MAP_FULL:
+    {
+        mdb_txn_abort(txn);
+        return -1;
+    }
+    default:
+        mdb_fatal(e);
+    }
+
+	entry->data.buf = val.mv_data;
+	entry->data.len = val.mv_size;
+
+    e = mdb_txn_commit(txn);
+    if (0 != e)
+        mdb_fatal(e);
+
+	return 0;
+   
 }
 
 /** Non-voting node now has enough logs to be able to vote.
@@ -1218,6 +1289,7 @@ raft_cbs_t raft_funcs = {
     .persist_vote                = __raft_persist_vote,
     .persist_term                = __raft_persist_term,
     .log_offer                   = __raft_logentry_offer,
+    .log_get					 = __raft_logentry_get,
     .log_poll                    = __raft_logentry_poll,
     .log_pop                     = __raft_logentry_pop,
     .node_has_sufficient_logs    = __raft_node_has_sufficient_logs,
