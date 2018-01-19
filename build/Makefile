@@ -1,0 +1,3 @@
+all:
+	gcc -g  ../src/main.c ../src/parse_msg.c  -I../  -I../deps/raft -I../deps/libuv/include/ -I../deps/h2o/include/  -I../deps/lmdb/ -I../deps/h2o_helpers  -I../deps/uv_helpers  -I../deps/lmdb_helpers/ -I../deps/uv_multiplex/ -I../deps/tpl -I../deps/arraytools  -I../deps/container_of ../deps/raft/raft_log.c ../deps/raft/raft_node.c ../deps/raft/raft_server.c ../deps/raft/raft_server_properties.c ../deps/tpl/tpl.c ../deps/lmdb_helpers/lmdb_helpers.c  ../deps/lmdb/mdb.c ../deps/lmdb/midl.c ../deps/uv_helpers/uv_helpers.c  ../deps/h2o_helpers/h2o_helpers.c ../deps/uv_multiplex/dispatcher.c ../deps/uv_multiplex/worker.c   -L../ -luv -lh2o -lpthread -lssl -lcrypto -lpbc -o tt
+
