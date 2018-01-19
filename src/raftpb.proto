@@ -1,0 +1,90 @@
+syntax = "proto2";
+package raftpb;
+
+//enum RaftMsgType{
+//    MSG_HANDSHAKE = 0;
+//    MSG_HANDSHAKE_RESPONSE;
+//    MSG_LEAVE;
+//    MSG_LEAVE_RESPONSE;
+//    MSG_REQUESTVOTE;
+//    MSG_REQUESTVOTE_RESPONSE;
+//    MSG_APPENDENTRIES;
+//    MSG_APPENDENTRIES_RESPONSE;
+//}
+
+//enum RaftLogType{
+//    RAFT_LOGTYPE_NORMAL = 0;
+//    RAFT_LOGTYPE_ADD_NONVOTING_NODE;
+//    RAFT_LOGTYPE_ADD_NODE;
+//    RAFT_LOGTYPE_REMOVE_NODE;
+//    RAFT_LOGTYPE_NUM;
+//}
+
+//enum HandShakeState{
+//    HANDSHAKE_FAILURE   = 0;
+//    HANDSHAKE_SUCCESS   = 1;
+//}
+
+message HandShake{
+    required int32 raft_port     = 1;
+    required int32 server_port   = 2;
+    required int32 node_id       = 3;
+}
+
+message HandShakeResp{
+    required int32 success      = 1;
+    required int32 leader_port  = 2;
+    required int32 server_port  = 3;
+    required int32 node_id      = 4;
+    required string leader_host = 5;
+}
+
+message RequestVote{
+    required uint64 term            = 1;
+    required int32  candidate_id    = 2;
+    required uint64 last_log_index  = 3;
+    required uint64 last_log_term   = 4;
+}
+
+message RequestVoteResp{
+    required uint64 term            =1;
+    required int32  vote_granted    =2;
+}
+
+message EntryData{
+    required bytes  buf = 1;
+    required uint32 len = 2;
+}
+
+message Entry{
+    required uint64 term            = 1;
+    required uint64 id              = 2;
+    required int32 type             = 3;
+    optional EntryData data         = 4;
+}
+
+message AppendEntries{
+    required uint64 term            = 1;
+    required uint64 prev_log_index   = 2;
+    required uint64 prev_log_term    = 3;
+    required uint64 leader_commit   = 4;
+    optional int32  n_entries       = 5;
+    repeated Entry  entries         = 6;
+}
+
+message AppendEntriesResp{
+    required uint64 term            = 1;
+    required int32  success         = 2;
+    required uint64 current_index   = 3;
+    required uint64 first_index     = 4;
+}
+
+message RaftMessage{
+    required int32              type    = 1;
+    optional HandShake          hs      = 2;
+    optional HandShakeResp      hsr     = 3;
+    optional RequestVote        rv      = 4;
+    optional RequestVoteResp    rvr     = 5;
+    optional AppendEntries      ae      = 6;
+    optional AppendEntriesResp  aer     = 7;
+}

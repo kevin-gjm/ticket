@@ -118,7 +118,7 @@ typedef struct
     unsigned long leader_commit;
 
     /** number of entries within this message */
-    unsigned long n_entries;
+    int n_entries;
 
     /** array of entries within this message */
     msg_entry_t* entries;
