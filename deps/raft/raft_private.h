@@ -44,6 +44,7 @@ typedef struct {
     int num_nodes;
 
     int election_timeout;
+	int election_timeout_rand;
     int request_timeout;
 
     /* what this node thinks is the node ID of the current leader, or -1 if
@@ -59,11 +60,20 @@ typedef struct {
 
     /* the log which has a voting cfg change, otherwise -1 */
     int voting_cfg_change_log_idx;
+
+	int snapshot_in_progress;
+
+    /* Last compacted snapshot */
+    int snapshot_last_idx;
+    int snapshot_last_term;
+	
 } raft_server_private_t;
 
 void raft_election_start(raft_server_t* me);
 
 void raft_become_candidate(raft_server_t* me);
+
+void raft_randomize_election_timeout(raft_server_t* me_);
 
 void raft_become_follower(raft_server_t* me);
 

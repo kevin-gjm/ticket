@@ -37,6 +37,16 @@ static void __log(raft_server_t *me_, raft_node_t* node, const char *fmt, ...)
         me->cb.log(me_, node, me->udata, buf);
 }
 
+void raft_randomize_election_timeout(raft_server_t* me_)
+{
+    raft_server_private_t* me = (raft_server_private_t*)me_;
+
+    /* [election_timeout, 2 * election_timeout) */
+    me->election_timeout_rand = me->election_timeout + rand() % me->election_timeout;
+    __log(me_, NULL, "randomize election timeout to %d", me->election_timeout_rand);
+}
+
+
 raft_server_t* raft_new()
 {
     raft_server_private_t* me =
@@ -48,7 +58,12 @@ raft_server_t* raft_new()
     me->timeout_elapsed = 0;
     me->request_timeout = 200;
     me->election_timeout = 1000;
+	raft_randomize_election_timeout((raft_server_t*)me);
     me->log = log_new();
+	if (!me->log) {
+        free(me);
+        return NULL;
+    }
     me->voting_cfg_change_log_idx = -1;
     raft_set_state((raft_server_t*)me, RAFT_STATE_FOLLOWER);
     me->current_leader = NULL;
@@ -91,6 +106,7 @@ void raft_become_leader(raft_server_t* me_)
     __log(me_, NULL, "becoming leader term:%d", raft_get_current_term(me_));
 
     raft_set_state(me_, RAFT_STATE_LEADER);
+	me->timeout_elapsed = 0;
     for (i = 0; i < me->num_nodes; i++)
     {
         if (me->node == me->nodes[i] || !raft_node_is_voting(me->nodes[i]))
@@ -117,9 +133,8 @@ void raft_become_candidate(raft_server_t* me_)
     me->current_leader = NULL;
     raft_set_state(me_, RAFT_STATE_CANDIDATE);
 
-    /* we need a random factor here to prevent simultaneous candidates */
-    /* TODO: this should probably be lower */
-    me->timeout_elapsed = rand() % me->election_timeout;
+    raft_randomize_election_timeout(me_);
+	me->timeout_elapsed =0;
 
     for (i = 0; i < me->num_nodes; i++)
         if (me->node != me->nodes[i] && raft_node_is_voting(me->nodes[i]))
@@ -128,8 +143,11 @@ void raft_become_candidate(raft_server_t* me_)
 
 void raft_become_follower(raft_server_t* me_)
 {
+	raft_server_private_t* me = (raft_server_private_t*)me_;
     __log(me_, NULL, "becoming follower");
     raft_set_state(me_, RAFT_STATE_FOLLOWER);
+	raft_randomize_election_timeout(me_);
+    me->timeout_elapsed = 0;
 }
 
 int raft_periodic(raft_server_t* me_, int msec_since_last_period)
@@ -137,13 +155,14 @@ int raft_periodic(raft_server_t* me_, int msec_since_last_period)
     raft_server_private_t* me = (raft_server_private_t*)me_;
 
     me->timeout_elapsed += msec_since_last_period;
+	
 
     if (me->state == RAFT_STATE_LEADER)
     {
         if (me->request_timeout <= me->timeout_elapsed)
             raft_send_appendentries_all(me_);
     }
-    else if (me->election_timeout <= me->timeout_elapsed)
+    else if (me->election_timeout_rand <= me->timeout_elapsed)
     {
         if (1 < me->num_nodes)
             raft_election_start(me_);
@@ -273,7 +292,6 @@ int raft_recv_appendentries(
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
 
-    me->timeout_elapsed = 0;
 
     if (0 < ae->n_entries)
         __log(me_, node, "recvd appendentries from: %lx, t:%d ci:%d lc:%d pli:%d plt:%d #%d",
@@ -295,7 +313,6 @@ int raft_recv_appendentries(
     else if (me->current_term < ae->term)
     {
         raft_set_current_term(me_, ae->term);
-        r->term = ae->term;
         raft_become_follower(me_);
     }
     else if (ae->term < me->current_term)
@@ -306,14 +323,17 @@ int raft_recv_appendentries(
         goto fail_with_current_idx;
     }
 
+    /* update current leader because ae->term is up to date */
+    me->current_leader = node;
+
+    me->timeout_elapsed = 0;
+
     /* Not the first appendentries we've received */
     /* NOTE: the log starts at 1 */
     if (0 < ae->prev_log_idx)
     {
         raft_entry_t e ={0};
-			
 		
-
         if (0 != raft_get_entry_from_idx(me_, ae->prev_log_idx,&e))
         {
             __log(me_, node, "AE no log at prev_idx %d", ae->prev_log_idx);
@@ -331,7 +351,7 @@ int raft_recv_appendentries(
                   e.term, ae->prev_log_term, raft_get_current_idx(me_), ae->prev_log_idx);
             assert(me->commit_idx < ae->prev_log_idx);
             /* Delete all the following log entries because they don't match */
-            log_delete(me->log, ae->prev_log_idx);
+            log_delete(me->log, max(ae->prev_log_idx,ae->leader_commit));
             r->current_idx = ae->prev_log_idx - 1;
             goto fail;
         }
@@ -356,7 +376,6 @@ int raft_recv_appendentries(
         raft_entry_t existing_ety = {0};
 		
 		int ret = raft_get_entry_from_idx(me_, ety_index,&existing_ety);
-        r->current_idx = ety_index;
         if (ret == 0  && existing_ety.term != ety->term)
         {
             assert(me->commit_idx < ety_index);
@@ -365,6 +384,7 @@ int raft_recv_appendentries(
         }
         else if (ret != 0)
             break;
+		r->current_idx = ety_index;
     }
 
     /* Pick up remainder in case of mismatch or missing entry */

@@ -24,6 +24,7 @@ void raft_set_election_timeout(raft_server_t* me_, int millisec)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;
     me->election_timeout = millisec;
+	raft_randomize_election_timeout(me_);
 }
 
 void raft_set_request_timeout(raft_server_t* me_, int millisec)
@@ -194,3 +195,9 @@ unsigned long raft_get_last_log_term(raft_server_t* me_)
     }
     return 0;
 }
+
+int raft_snapshot_is_in_progress(raft_server_t *me_)
+{
+    return ((raft_server_private_t*)me_)->snapshot_in_progress;
+}
+
