@@ -1281,7 +1281,7 @@ static void __load_commit_log(server_t* sv)
     MDB_val val;
     mdb_gets(sv->db_env, sv->state, "commit_idx", &val);
     if (val.mv_data)
-        raft_set_commit_idx(sv->raft, *(int*)val.mv_data);
+        raft_set_commit_idx(sv->raft, *(unsigned long*)val.mv_data);
 
     raft_apply_all(sv->raft);
 }
@@ -1293,8 +1293,9 @@ static void __load_persistent_state(server_t* sv)
 
     mdb_gets_int(sv->db_env, sv->state, "voted_for", &val);
     raft_vote_for_nodeid(sv->raft, val);
-    mdb_gets_int(sv->db_env, sv->state, "term", &val);
-    raft_set_current_term(sv->raft, val);
+	unsigned long term;
+    mdb_gets_ulong(sv->db_env, sv->state, "term", &term);
+    raft_set_current_term(sv->raft, term);
 }
 
 static int __load_opts(server_t* sv, options_t* opts)
