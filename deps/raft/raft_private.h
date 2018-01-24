@@ -100,7 +100,7 @@ int raft_apply_entry(raft_server_t* me_);
  * @return 0 if unsuccessful */
 int raft_append_entry(raft_server_t* me_, raft_entry_t* c);
 
-void raft_set_last_applied_idx(raft_server_t* me, unsigned long idx);
+
 
 void raft_set_state(raft_server_t* me_, int state);
 

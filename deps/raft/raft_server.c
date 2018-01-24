@@ -624,6 +624,13 @@ int raft_append_entry(raft_server_t* me_, raft_entry_t* ety)
     return log_append_entry(me->log, ety);
 }
 
+int raft_set_log_info(raft_server_t* me_,unsigned long total_amount,unsigned long hold_count)
+{
+	raft_server_private_t* me = (raft_server_private_t*)me_;
+    return set_log_count(me->log, total_amount,hold_count);
+}
+
+
 int raft_apply_entry(raft_server_t* me_)
 {
     raft_server_private_t* me = (raft_server_private_t*)me_;

@@ -6,7 +6,7 @@
 #include "readfile.h"
 
 #define IP_STR_LEN 16
-#define RAFTPB_FILE "./raftpb.pb"
+#define RAFTPB_FILE "../raftpb.pb"
 
 typedef enum {
     HANDSHAKE_FAILURE,

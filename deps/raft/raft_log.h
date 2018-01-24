@@ -5,6 +5,9 @@ typedef void* log_t;
 
 log_t* log_new();
 
+int set_log_count(log_t* me_,unsigned long total_amount,unsigned long hold_count);
+
+
 void log_set_callbacks(log_t* me_, raft_cbs_t* funcs, void* raft);
 
 void log_free(log_t* me_);

@@ -72,7 +72,9 @@ int raft_get_voted_for(raft_server_t* me_)
 
 void raft_set_current_term(raft_server_t* me_, const unsigned long term)
 {
-    raft_server_private_t* me = (raft_server_private_t*)me_;
+	
+    raft_server_private_t* me = (raft_server_private_t*)me_;
+	printf("set current term %lu\n\n",term);
     if (me->current_term < term)
     {
         me->current_term = term;

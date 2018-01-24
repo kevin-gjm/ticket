@@ -527,6 +527,9 @@ int raft_get_request_timeout(raft_server_t* me);
  * @return index of last applied entry */
 unsigned long  raft_get_last_applied_idx(raft_server_t* me);
 
+void raft_set_last_applied_idx(raft_server_t* me, unsigned long idx);
+
+
 /**
  * @return 1 if node is leader; 0 otherwise */
 int raft_node_is_leader(raft_node_t* node);
@@ -613,6 +616,8 @@ void raft_set_commit_idx(raft_server_t* me, unsigned long commit_idx);
  * This should be used to reload persistent state, ie. the commit log.
  * @param[in] ety The entry to be appended */
 int raft_append_entry(raft_server_t* me, raft_entry_t* ety);
+
+int raft_set_log_info(raft_server_t* me_,unsigned long total_amount,unsigned long hold_count);
 
 /** Confirm if a msg_entry_response has been committed.
  * @param[in] r The response we want to check */

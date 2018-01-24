@@ -53,6 +53,15 @@ log_t* log_new()
     return (log_t*)me;
 }
 
+int set_log_count(log_t* me_,unsigned long total_amount,unsigned long hold_count)
+{
+	 log_private_t* me = (log_private_t*)me_;
+	 me->back=total_amount;
+	 me->count=me->back;
+	 return 0;
+}
+
+
 void log_set_callbacks(log_t* me_, raft_cbs_t* funcs, void* raft)
 {
     log_private_t* me = (log_private_t*)me_;
