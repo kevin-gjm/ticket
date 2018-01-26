@@ -8,9 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "h2o.h"
-#include "h2o/http1.h"
-#include "h2o_helpers.h"
 #include "lmdb.h"
 #include "lmdb_helpers.h"
 #include "raft.h"
@@ -47,24 +44,6 @@ static int __send_leave_response(peer_connection_t* conn);
 
 static void __drop_db(server_t* sv);
 
-/** Serialize a peer message using TPL
- * @param[out] bufs libuv buffer to insert serialized message into
- * @param[out] buf Buffer to write serialized message into */
-/*
-
-static size_t __peer_msg_serialize(tpl_node *tn, uv_buf_t *buf, char* data)
-{
-    size_t sz;
-    tpl_pack(tn, 0);
-    tpl_dump(tn, TPL_GETSIZE, &sz);
-    tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, data, RAFT_BUFLEN);
-    tpl_free(tn);
-    buf->len = sz;
-    buf->base = data;
-    return sz;
-}
-
-*/
 
 static void __peer_msg_send(uv_stream_t* s, msg_t* msg)
 {
@@ -85,164 +64,7 @@ static void __peer_msg_send(uv_stream_t* s, msg_t* msg)
         uv_fatal(e);
 }
 
-/** Check if the ticket has already been issued
- * @return 0 if not unique; otherwise 1 */
-static int __check_if_ticket_exists(const unsigned int ticket)
-{
-    MDB_txn *txn;
 
-    int e = mdb_txn_begin(sv->db_env, NULL, MDB_RDONLY, &txn);
-    if (0 != e)
-        mdb_fatal(e);
-
-    MDB_val v, k = { .mv_size = sizeof(ticket), .mv_data = (void*)&ticket };
-
-    e = mdb_get(txn, sv->tickets, &k, &v);
-    switch (e)
-    {
-    case 0:
-        break;
-    case MDB_NOTFOUND:
-        e = mdb_txn_commit(txn);
-        if (0 != e)
-            mdb_fatal(e);
-        return 0;
-    default:
-        mdb_fatal(e);
-    }
-
-    e = mdb_txn_commit(txn);
-    if (0 != e)
-        mdb_fatal(e);
-
-    return 1;
-}
-
-static unsigned int __generate_ticket()
-{
-    unsigned int ticket;
-
-    do
-    {
-        // TODO need better random number generator
-        ticket = rand();
-    }
-    while (__check_if_ticket_exists(ticket));
-    return ticket;
-}
-
-/** HTTP POST entry point for receiving entries from client
- * Provide the user with an ID */
-static int __http_get_id(h2o_handler_t *self, h2o_req_t *req)
-{
-    static h2o_generator_t generator = { NULL, NULL };
-
-    if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("POST")))
-        return -1;
-
-    raft_node_t* leader = raft_get_current_leader_node(sv->raft);
-    if (!leader)
-        return h2oh_respond_with_error(req, 503, "Leader unavailable");
-    else if (raft_node_get_id(leader) != sv->node_id)
-    {
-        peer_connection_t* leader_conn = raft_node_get_udata(leader);
-        char leader_url[LEADER_URL_LEN];
-        static h2o_generator_t generator = { NULL, NULL };
-        static h2o_iovec_t body = { .base = "", .len = 0 };
-        req->res.status = 301;
-        req->res.reason = "Moved Permanently";
-        h2o_start_response(req, &generator);
-        snprintf(leader_url, LEADER_URL_LEN, "http://%s:%d/",
-                 inet_ntoa(leader_conn->addr.sin_addr),
-                 leader_conn->server_port);
-        h2o_add_header(&req->pool,
-                       &req->res.headers,
-                       H2O_TOKEN_LOCATION,
-                       leader_url,
-                       strlen(leader_url));
-        h2o_send(req, &body, 1, 1);
-        return 0;
-    }
-
-    int e;
-
-    unsigned int ticket = __generate_ticket();
-
-    msg_entry_t entry = {};
-    entry.id = rand();
-    entry.data.buf = (void*)&ticket;
-    entry.data.len = sizeof(ticket);
-
-    uv_mutex_lock(&sv->raft_lock);
-
-    msg_entry_response_t r;
-    e = raft_recv_entry(sv->raft, &entry, &r);
-    if (0 != e)
-        return h2oh_respond_with_error(req, 500, "BAD");
-
-    /* block until the entry is committed */
-    int done = 0, tries = 0;
-    do
-    {
-        if (3 < tries)
-        {
-            printf("ERROR: failed to commit entry\n");
-            uv_mutex_unlock(&sv->raft_lock);
-            return h2oh_respond_with_error(req, 400, "TRY AGAIN");
-        }
-
-        uv_cond_wait(&sv->appendentries_received, &sv->raft_lock);
-        e = raft_msg_entry_response_committed(sv->raft, &r);
-        tries += 1;
-        switch (e)
-        {
-        case 0:
-            /* not committed yet */
-            break;
-        case 1:
-            done = 1;
-            uv_mutex_unlock(&sv->raft_lock);
-            break;
-        case -1:
-            uv_mutex_unlock(&sv->raft_lock);
-            return h2oh_respond_with_error(req, 400, "TRY AGAIN");
-        }
-    }
-    while (!done);
-
-    /* serialize ID */
-    char id_str[100];
-    h2o_iovec_t body;
-    sprintf(id_str, "%lu", entry.id);
-    body = h2o_iovec_init(id_str, strlen(id_str));
-
-    req->res.status = 200;
-    req->res.reason = "OK";
-    h2o_start_response(req, &generator);
-    h2o_send(req, &body, 1, 1);
-    return 0;
-}
-
-/** Received an HTTP connection from client */
-static void __on_http_connection(uv_stream_t *listener, const int status)
-{
-    int e;
-
-    if (0 != status)
-        uv_fatal(status);
-
-    uv_tcp_t *tcp = calloc(1, sizeof(*tcp));
-    e = uv_tcp_init(listener->loop, tcp);
-    if (0 != status)
-        uv_fatal(e);
-
-    e = uv_accept(listener, (uv_stream_t*)tcp);
-    if (0 != e)
-        uv_fatal(e);
-
-    h2o_socket_t *sock = h2o_uv_socket_create((uv_stream_t*)tcp, (uv_close_cb)free);
-    h2o_http1_accept(&sv->ctx, sv->cfg.hosts, sock);
-}
 
 /** Initiate connection if we are disconnected */
 static int __connect_if_needed(peer_connection_t* conn)
@@ -1293,20 +1115,7 @@ static int __load_opts(server_t* sv, options_t* option)
     return 0;
 }
 
-static void __http_worker_start(void* uv_tcp)
-{
-    uv_tcp_t* listener = uv_tcp;
 
-    h2o_context_init(&sv->ctx, listener->loop, &sv->cfg);
-
-    int e = uv_listen((uv_stream_t*)listener,
-                      MAX_HTTP_CONNECTIONS,
-                      __on_http_connection);
-    if (0 != e)
-        uv_fatal(e);
-
-    uv_run(listener->loop, UV_RUN_DEFAULT);
-}
 
 static void __drop_db(server_t* sv)
 {
@@ -1359,19 +1168,6 @@ static void __new_db(server_t* sv)
     mdb_db_create(&sv->state, sv->db_env, "state");
 }
 
-static void __start_http_socket(server_t* sv, const char* host, int port, uv_tcp_t* listen, uv_multiplex_t* m)
-{
-    memset(&sv->http_loop, 0, sizeof(uv_loop_t));
-    int e = uv_loop_init(&sv->http_loop);
-    if (0 != e)
-        uv_fatal(e);
-    uv_bind_listen_socket(listen, host, port, &sv->http_loop);
-    uv_multiplex_init(m, listen, IPC_PIPE_NAME, HTTP_WORKERS,
-                      __http_worker_start);
-    for (int i = 0; i < HTTP_WORKERS; i++)
-        uv_multiplex_worker_create(m, i, NULL);
-    uv_multiplex_dispatch(m);
-}
 
 static void __start_peer_socket(server_t* sv, const char* host, int port, uv_tcp_t* listen)
 {
@@ -1467,27 +1263,12 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    /* web server for clients */
-    h2o_pathconf_t *pathconf;
-    h2o_handler_t *handler;
-    h2o_hostconf_t *hostconf;
-
-    h2o_config_init(&sv->cfg);
-    hostconf = h2o_config_register_host(&sv->cfg,
-                                        h2o_iovec_init(H2O_STRLIT("default")),
-                                        ANYPORT);
-
-    /* HTTP route for receiving entries from clients */
-    pathconf = h2o_config_register_path(hostconf, "/");
-    h2o_chunked_register(pathconf);
-    handler = h2o_create_handler(pathconf, sizeof(*handler));
-    handler->on_req = __http_get_id;
 
     /* lock and condition to support HTTP client blocking */
     uv_mutex_init(&sv->raft_lock);
     uv_cond_init(&sv->appendentries_received);
 
-    uv_tcp_t http_listen, peer_listen;
+    uv_tcp_t  peer_listen;
     uv_multiplex_t m;
 
     /* get ID */
@@ -1558,7 +1339,6 @@ int main(int argc, char **argv)
 		info.port = opts.server_port;
 		info.thread_count = HTTP_WORKERS;
 		start_zmq_server(&info);
-       // __start_http_socket(sv, opts.host, atoi(opts.http_port), &http_listen, &m);
         __start_peer_socket(sv, opts.host, opts.raft_port, &peer_listen);
         __load_commit_log(sv);
         __load_persistent_state(sv);
@@ -1590,7 +1370,6 @@ int main(int argc, char **argv)
 		
 		
     	start_zmq_server(&info);
-       // __start_http_socket(sv, opts.host, atoi(opts.http_port), &http_listen, &m);
         __start_peer_socket(sv, opts.host, opts.raft_port, &peer_listen);
         __load_commit_log(sv);
         __load_persistent_state(sv);

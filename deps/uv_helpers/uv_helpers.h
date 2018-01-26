@@ -1,6 +1,6 @@
 #ifndef UV_HELPERS_H
 #define UV_HELPERS_H
-
+#include "uv.h"
 #define uv_fatal(e) { \
         assert(0 != e); \
         fprintf(stderr, "%s:%d - err:%s: %s\n", \
