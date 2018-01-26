@@ -304,27 +304,32 @@ int raft_recv_appendentries(
               ae->n_entries);
 
     r->term = me->current_term;
-
+	printf("--------------->  1\n");
     if (raft_is_candidate(me_) && me->current_term == ae->term)
     {
+    	printf("--------------->  2\n");
         me->voted_for = -1;
         raft_become_follower(me_);
     }
     else if (me->current_term < ae->term)
     {
+    	printf("--------------->  3\n");
         raft_set_current_term(me_, ae->term);
         raft_become_follower(me_);
     }
     else if (ae->term < me->current_term)
     {
+    	printf("--------------->  4\n");
         /* 1. Reply false if term < currentTerm (§5.1) */
         __log(me_, node, "AE term %d is less than current term %d",
               ae->term, me->current_term);
         goto fail_with_current_idx;
     }
+	printf("--------------->  5\n");
 
     /* update current leader because ae->term is up to date */
     me->current_leader = node;
+	printf("set leader:%x\n",me->current_leader);
 
     me->timeout_elapsed = 0;
 

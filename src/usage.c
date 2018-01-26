@@ -210,3 +210,16 @@ void change_with_the_old(options_t* option, options_t* old)
 	if(option->id==0)
 		option->id = old->id;
 }
+
+
+void printf_option(options_t* option)
+{
+	printf("-----------------------------------------------\n");
+	printf("id:%d\n",option->id);
+	printf("peer ip:%s,port:%d\n",option->PEER_IP,option->PEER_PORT);
+	printf("raft ip:%s,port:%d\n",option->host,option->raft_port);
+	printf("server ip:%s,port:%d\n",option->host,option->server_port);
+	printf("-----------------------------------------------\n");
+	
+}
+

@@ -2,10 +2,12 @@
 #include <pthread.h>
 #include <czmq.h>
 #include <zmsg.h>
+#include <zsys.h>
 #include "pbc.h"
 #include "raft.h"
 #include "sql_store.h"
 
+extern int g_exit;
 struct pbc_wmessage * parse_zmq_noquery_msg_write(struct pbc_env * env,zmq_server_msg_t* msg);
 int send_noquery_result(zframe_t* id,zsock_t* server,MessageType type,unsigned long seq,int result,int err_code,char* errmsg);
 int parse_msg_read_type_and_seq(struct pbc_env* env, struct pbc_slice* slice,zmq_server_msg_t* msg);
@@ -311,6 +313,8 @@ int send_noquery_result(zframe_t* id,zsock_t* server,MessageType type,unsigned l
 
 void* proxy_routine(void* arg)
 {
+	zsys_handler_set(NULL);
+
 	zmq_server_info_t * info = (zmq_server_info_t*)arg;
 
 	pthread_detach(pthread_self());
@@ -332,29 +336,27 @@ void* proxy_routine(void* arg)
 	zpoller_t *poller = zpoller_new(server,NULL);
 
 	
-	while (!zctx_interrupted)
+	while (!g_exit)
 	{
 		
 		zsock_t *which = (zsock_t *)zpoller_wait(poller, -1);
 
-		printf("receive a msg\n");
-		if (which==server)
+		//printf("receive a msg\n");
+		if (!g_exit && which==server)
 		{
 			zmsg_t *msg = zmsg_recv(server);
 			if (!msg)
 				break;
 			if (zmsg_size(msg) > 1)
 			{
-			printf("msg:\n");
+				printf("msg:\n");
 				zmsg_print(msg);
 				zframe_t* id_frame_tmp = zmsg_first(msg);
 				zframe_t* id_frame = zframe_dup(id_frame_tmp);
 				handle_zmq_msg(msg,server,id_frame);
-				
-				zmsg_destroy(&msg);
-				if (zctx_interrupted)
-					break;
+			
 			}
+			zmsg_destroy(&msg);
 
 		}
 	}

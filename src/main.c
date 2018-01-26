@@ -31,6 +31,7 @@ options_t re_opts; //load from db
 
 server_t server;
 server_t *sv = &server;
+int g_exit=0;
 
 
 
@@ -354,8 +355,10 @@ static int __offer_cfg_change(server_t* sv,
     {
         raft_remove_node(raft, raft_get_node(sv->raft, change->node_id));
         if (conn)
-            conn->node = NULL;
-        /* __delete_connection(sv, conn); */
+        {   //__delete_connection(sv, conn); 
+        	conn->node = NULL;
+			printf("delete node id %d\n",change->node_id);
+		}
         return 0;
     }
 
@@ -373,9 +376,11 @@ static int __offer_cfg_change(server_t* sv,
     {
         case RAFT_LOGTYPE_ADD_NONVOTING_NODE:
             conn->node = raft_add_non_voting_node(raft, conn, change->node_id, is_self);
+			printf("add no vote node:%x\n",conn->node);
             break;
         case RAFT_LOGTYPE_ADD_NODE:
             conn->node = raft_add_node(raft, conn, change->node_id, is_self);
+			printf("add node:%x\n",conn->node);
         break;
         default:
             assert(0);
@@ -511,6 +516,7 @@ static int __append_cfg_change(server_t* sv,
     entry.type = change_type;
     msg_entry_response_t r;
     int e = raft_recv_entry(sv->raft, &entry, &r);
+	free(change);
     if (0 != e)
         return -1;
     return 0;
@@ -544,6 +550,7 @@ static int __handle_msg(msg_t * recv_msg, peer_connection_t* conn)
         raft_node_t* node = raft_get_node(sv->raft, recv_msg->hs.node_id);
         if (node)
         {
+        	printf("already in config\n");
             raft_node_set_udata(node, conn);
             conn->node = node;
         }
@@ -558,10 +565,12 @@ static int __handle_msg(msg_t * recv_msg, peer_connection_t* conn)
         }
         else if (node)
         {
+        	printf("i'm leader and have find this node in config\n");
             return __send_handshake_response(conn, HANDSHAKE_SUCCESS, NULL);
         }
         else
         {
+        	printf("i'm leader not found in config then add no vote node\n");
             int e = __append_cfg_change(sv, RAFT_LOGTYPE_ADD_NONVOTING_NODE,
                                        inet_ntoa(conn->addr.sin_addr),
                                        recv_msg->hs.raft_port, recv_msg->hs.server_port,
@@ -597,7 +606,10 @@ static int __handle_msg(msg_t * recv_msg, peer_connection_t* conn)
             printf("Connected to leader: %s:%d\n",
                  inet_ntoa(conn->addr.sin_addr), conn->raft_port);
             if (!conn->node)
+            {
                 conn->node = raft_get_node(sv->raft, recv_msg->hsr.node_id);
+				printf("not find this node and get it from node list,node:%x\n",conn->node);
+            }
         }
         break;
     case MSG_LEAVE:
@@ -617,7 +629,8 @@ static int __handle_msg(msg_t * recv_msg, peer_connection_t* conn)
         }
         break;
     case MSG_LEAVE_RESPONSE:
-        __drop_db(sv);
+       // __drop_db(sv);
+		g_exit=1;
         printf("Shutdown complete. Quitting...\n");
         exit(0);
         break;
@@ -665,7 +678,7 @@ static void __peer_read_cb(uv_stream_t* tcp, ssize_t nread, const uv_buf_t* buf)
         case UV__ECONNRESET:
         case UV__EOF:
             conn->connection_status = DISCONNECTED;
-			if( buf->len>0)
+			if(buf->base)
 				free(buf->base);
             return;
         default:
@@ -675,6 +688,7 @@ static void __peer_read_cb(uv_stream_t* tcp, ssize_t nread, const uv_buf_t* buf)
     if (0 <= nread)
     {
         assert(conn);
+		
         uv_mutex_lock(&sv->raft_lock);
 
 		msg_t msg = {0};
@@ -703,7 +717,7 @@ static void __peer_read_cb(uv_stream_t* tcp, ssize_t nread, const uv_buf_t* buf)
         uv_mutex_unlock(&sv->raft_lock);
     }
 
-	if( buf->len>0)
+	if( buf->base)
 		free(buf->base);
 }
 
@@ -851,6 +865,7 @@ static peer_connection_t* __new_connection(server_t* sv)
 /** Connect to raft peer */
 static void __connect_to_peer(peer_connection_t* conn)
 {
+	printf("connect to peer\n\n");
     int e;
 
     uv_tcp_t *tcp = calloc(1, sizeof(uv_tcp_t));
@@ -909,8 +924,11 @@ static int __raft_logentry_offer(
     MDB_txn *txn;
 
     if (raft_entry_is_cfg_change(ety))
+    {
+    	printf("offer cfg change!\n");
         __offer_cfg_change(sv, raft, ety->data.buf, ety->type);
-
+    }
+	
     int e = mdb_txn_begin(sv->db_env, NULL, 0, &txn);
     if (0 != e)
         mdb_fatal(e);
@@ -1307,9 +1325,11 @@ static void __start_raft_periodic_timer(server_t* sv)
 
 static void __int_handler(int dummy)
 {
-	exit(0);
+
+	//exit(0);
     uv_mutex_lock(&sv->raft_lock);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
+	printf("leader:%X\n",leader);
     if (leader)
     {
         if (raft_node_get_id(leader) == sv->node_id)
@@ -1479,6 +1499,7 @@ int main(int argc, char **argv)
     else
     {
         e = __load_opts(sv, &re_opts);
+		printf_option(&re_opts);
         if (0 != e)
         {
             printf("ERROR: No database available.\n"
@@ -1497,6 +1518,8 @@ int main(int argc, char **argv)
         __drop_db(sv);
         __new_db(sv);
         __save_opts(sv, &opts);
+		printf("save option !!!!!!!!!!!!!!!!!!!!!!\n");
+		printf_option(&opts);
 
 		snprintf(info.ip,32,"%s",opts.host);
 		info.port = opts.server_port;
@@ -1529,6 +1552,7 @@ int main(int argc, char **argv)
     /* Reload cluster information and rejoin cluster */
     else if(opts.restart)
     {
+     	__save_opts(sv, &opts);
     	sv->node_id = opts.id;
 		snprintf(info.ip,32,"%s",opts.host);
 		info.port = opts.server_port;
@@ -1555,7 +1579,9 @@ int main(int argc, char **argv)
     }
 	else
 	{
+		printf_option(&opts);
 		change_with_the_old(&opts,&re_opts);
+		printf_option(&opts);
 
 		sv->node_id = opts.id;
 		snprintf(info.ip,32,"%s",opts.host);

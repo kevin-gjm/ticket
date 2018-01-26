@@ -35,5 +35,6 @@ typedef struct
 int parse_options(int argc, char **argv, options_t* options);
 void show_usage();
 void change_with_the_old(options_t* option, options_t* old);
+void printf_option(options_t* option);
 
 #endif //USAGE_H_
